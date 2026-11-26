@@ -4,60 +4,72 @@ const main = document.getElementById('main')
 const form = document.getElementById('form')
 const search = document.getElementById('search')
 
-async function getUser(username) {
-    try {
-        const { data } = await axios(APIURL + username)
-
-        createUserCard(data)
-        getRepos(username)
-    } catch(err) {
-        if(err.response.status == 404) {
-            createErrorCard('No profile with this username')
-        }
-    }
+// Dışarıdan gelen veriler yalnızca textContent ile yazılır (XSS koruması).
+function element(tag, className, text) {
+    const node = document.createElement(tag)
+    if (className) node.className = className
+    if (text !== undefined && text !== null) node.textContent = text
+    return node
 }
 
-async function getRepos(username) {
-    try {
-        const { data } = await axios(APIURL + username + '/repos?sort=created')
+async function getJSON(url) {
+    const response = await fetch(url)
+    if (!response.ok) {
+        const error = new Error('HTTP ' + response.status)
+        error.status = response.status
+        throw error
+    }
+    return response.json()
+}
 
-        addReposToCard(data)
-    } catch(err) {
-        createErrorCard('Problem Oluştu. Tekrar Deneyiniz')
+async function getUser(username) {
+    const url = APIURL + encodeURIComponent(username)
+
+    try {
+        createUserCard(await getJSON(url))
+        addReposToCard(await getJSON(url + '/repos?sort=created'))
+    } catch (err) {
+        createErrorCard(err.status === 404 ? 'No profile with this username' : 'Problem Oluştu. Tekrar Deneyiniz')
     }
 }
 
 function createUserCard(user) {
-    const cardHTML = `
-    <div class="card">
-    <div>
-      <img src="${user.avatar_url}" alt="${user.name}" class="avatar">
-    </div>
-    <div class="user-info">
-      <h2>${user.name}</h2>
-      <p>${user.bio}</p>
-      <ul>
-        <li>${user.followers} <strong>Takipçi</strong></li>
-        <li>${user.following} <strong>Takip Edilen</strong></li>
-        <li>${user.public_repos} <strong>Projeler</strong></li>
-      </ul>
+    const name = user.name || user.login
 
-      <div id="repos"></div>
-    </div>
-  </div>
-    `
-    main.innerHTML = cardHTML
-    
+    const avatar = element('img', 'avatar')
+    avatar.src = user.avatar_url
+    avatar.alt = name
+
+    const picture = element('div')
+    picture.append(avatar)
+
+    const stats = element('ul')
+    const counts = [
+        [user.followers, 'Takipçi'],
+        [user.following, 'Takip Edilen'],
+        [user.public_repos, 'Projeler']
+    ]
+    counts.forEach(([count, label]) => {
+        const item = element('li', '', count + ' ')
+        item.append(element('strong', '', label))
+        stats.append(item)
+    })
+
+    const repos = element('div')
+    repos.id = 'repos'
+
+    const info = element('div', 'user-info')
+    info.append(element('h2', '', name), element('p', '', user.bio), stats, repos)
+
+    const card = element('div', 'card')
+    card.append(picture, info)
+    main.replaceChildren(card)
 }
 
 function createErrorCard(msg) {
-    const cardHTML = `
-        <div class="card">
-            <h1>${msg}</h1>
-        </div>
-    `
-
-    main.innerHTML = cardHTML
+    const card = element('div', 'card')
+    card.append(element('h1', '', msg))
+    main.replaceChildren(card)
 }
 
 function addReposToCard(repos) {
@@ -66,11 +78,10 @@ function addReposToCard(repos) {
     repos
         .slice(0, 5)
         .forEach(repo => {
-            const repoEl = document.createElement('a')
-            repoEl.classList.add('repo')
+            const repoEl = element('a', 'repo', repo.name)
             repoEl.href = repo.html_url
             repoEl.target = '_blank'
-            repoEl.innerText = repo.name
+            repoEl.rel = 'noopener noreferrer'
 
             reposEl.appendChild(repoEl)
         })
@@ -79,12 +90,11 @@ function addReposToCard(repos) {
 form.addEventListener('submit', (e) => {
     e.preventDefault()
 
-    const user = search.value
+    const user = search.value.trim()
 
-    if(user) {
+    if (user) {
         getUser(user)
 
         search.value = ''
     }
 })
-
